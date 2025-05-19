@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Interface Livreur</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore, collection, getDocs, addDoc, doc, getDoc,
+      updateDoc, serverTimestamp, onSnapshot, deleteDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAsrhgqkAIKaTUg6cYjfI_39LhRii4RHY4",
+      authDomain: "peluchestorecam-5f62b.firebaseapp.com",
+      projectId: "peluchestorecam-5f62b",
+      storageBucket: "peluchestorecam-5f62b.appspot.com",
+      messagingSenderId: "137938371885",
+      appId: "1:137938371885:web:6559d41f577d8544e9bfa4"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    onAuthStateChanged(auth, async user => {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        await chargerStock();
+        surveillerSortiesEnAttente();
+      }
+    });
+
+    async function chargerStock() {
+      const stockSnap = await getDocs(collection(db, "stock"));
+      const peluchesSnap = await getDocs(collection(db, "peluches"));
+      const peluches = {};
+      peluchesSnap.forEach(p => peluches[p.id] = p.data());
+
+      const tbody = document.getElementById("stockBody");
+      tbody.innerHTML = "";
+      stockSnap.forEach(doc => {
+        const stock = doc.data();
+        const peluche = peluches[stock.id_peluche];
+        if (peluche) {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${peluche.taille}cm</td>
+            <td>${peluche.couleur}</td>
+            <td>${stock.quantite}</td>
+            <td><button onclick="creerSortie('${doc.id}', '${peluche.taille}', '${peluche.couleur}')">Sortie</button></td>
+          `;
+          tbody.appendChild(row);
+        }
+      });
+    }
+
+    window.creerSortie = async (id_peluche, taille, couleur) => {
+      await addDoc(collection(db, "sorties_en_attente"), {
+        id_peluche,
+        taille,
+        couleur,
+        quantite: 1,
+        date: serverTimestamp(),
+        valide: false
+      });
+      alert("✔ Sortie ajoutée en attente.");
+    };
+    window.annulerSortie = async (id) => {
+  if (confirm("Voulez-vous vraiment annuler cette livraison ?")) {
+    try {
+      await deleteDoc(doc(db, "sorties_en_attente", id));
+      alert("❌ Livraison annulée.");
+    } catch (err) {
+      console.error("Erreur lors de l'annulation :", err);
+      alert("Erreur lors de l'annulation.");
+    }
+  }
+};
+
+
+    function surveillerSortiesEnAttente() {
+      const q = collection(db, "sorties_en_attente");
+      onSnapshot(q, snap => {
+        const tbody = document.getElementById("sortiesAttenteBody");
+        tbody.innerHTML = "";
+        snap.forEach(doc => {
+          const data = doc.data();
+          if (!data.valide) {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+              <td>${data.taille}cm</td>
+              <td>${data.couleur}</td>
+              <td>${data.quantite}</td>
+              <td>
+  <button onclick="validerSortie('${doc.id}', '${data.id_peluche}', ${data.quantite})">Valider</button>
+  <button onclick="annulerSortie('${doc.id}')">Annuler</button>
+</td>
+
+            `;
+            tbody.appendChild(row);
+          }
+        });
+      });
+    }
+
+    window.validerSortie = async (id, id_peluche, quantite) => {
+      const stockRef = doc(db, "stock", id_peluche);
+      const stockSnap = await getDoc(stockRef);
+      const stockData = stockSnap.data();
+
+      if (stockData.quantite < quantite) {
+        alert("❌ Stock insuffisant.");
+        return;
+      }
+
+      await updateDoc(stockRef, {
+        quantite: stockData.quantite - quantite
+      });
+
+      await updateDoc(doc(db, "sorties_en_attente", id), {
+        valide: true
+      });
+
+      await addDoc(collection(db, "mouvements_stock"), {
+        id_peluche,
+        quantite,
+        type: "sortie",
+        effectué_par: "livreur",
+        date: serverTimestamp()
+      });
+
+      alert("✔ Sortie validée !");
+    };
+
+    window.seDeconnecter = () => {
+      signOut(auth).then(() => window.location.href = "index.html");
+    };
+  </script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f4f6f8;
+    }
+    h1, h2 {
+      color: #2c3e50;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+    }
+    th {
+      background: #ecf0f1;
+    }
+    button {
+      padding: 6px 12px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>Interface Livreur</h1>
+  <button onclick="seDeconnecter()">Se déconnecter</button>
+
+  <h2>Stock Disponible</h2>
+  <table>
+    <thead>
+      <tr><th>Taille</th><th>Couleur</th><th>Quantité</th><th>Action</th></tr>
+    </thead>
+    <tbody id="stockBody"></tbody>
+  </table>
+
+  <h2>Sorties en Attente</h2>
+  <table>
+    <thead>
+      <tr><th>Taille</th><th>Couleur</th><th>Quantité</th><th>Action</th></tr>
+    </thead>
+    <tbody id="sortiesAttenteBody"></tbody>
+  </table>
+</body>
+</html>
