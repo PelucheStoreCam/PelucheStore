@@ -327,58 +327,87 @@ revenuEstimeElement.textContent = `${revenuEstime} FCFA`;
   const tbody = document.getElementById("livraisonsAttenteTableBody");
   tbody.innerHTML = "";
 
+  // 🔁 Charger les utilisateurs
+  const utilisateursSnap = await getDocs(collection(db, "utilisateurs"));
+  const utilisateursMap = {};
+  utilisateursSnap.forEach(doc => {
+    const data = doc.data();
+    utilisateursMap[doc.id] = data.nom || "Inconnu";
+  });
+
   snap.forEach(doc => {
     const data = doc.data();
     if (data.valide === false) {
       const peluche = peluches.find(p => p.id === data.id_peluche);
-      const row = document.createElement("tr");
       const dateStr = data.date?.toDate ? new Date(data.date.toDate()).toLocaleString() : "";
+
+      // 👤 Récupération du nom depuis la map
+      const nomUtilisateur = utilisateursMap[data.effectué_par] || data.effectué_par || "?";
+
+      const row = document.createElement("tr");
       row.innerHTML = `
         <td>${data.taille || peluche?.taille || "?"} cm</td>
         <td>${data.couleur || peluche?.couleur || "?"}</td>
         <td>${data.quantite}</td>
         <td>${dateStr}</td>
-        <td>${data.effectué_par || "?"}</td>
+        <td>${nomUtilisateur}</td>
       `;
       tbody.appendChild(row);
     }
   });
 }
 
+
+
     async function loadMouvements() {
-      const q = query(collection(db, "mouvements_stock"), orderBy("date", "desc"));
-      const snap = await getDocs(q);
-      const peluches = await loadPeluches();
-      const table = document.getElementById("mouvementsTableBody");
-      table.innerHTML = "";
-      const csvRows = [["Type", "Taille", "Couleur", "Quantité", "Effectué par", "Date"]];
-      snap.forEach(doc => {
-        const m = doc.data();
-        const peluche = peluches.find(p => p.id === m.id_peluche);
-        if (!peluche) return;
-        const dateStr = m.date?.toDate ? new Date(m.date.toDate()).toLocaleString() : "";
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${m.type}</td>
-          <td>${peluche.taille}cm</td>
-          <td>${peluche.couleur}</td>
-          <td>${m.quantite}</td>
-          <td>${m.effectué_par || "?"}</td>
-          <td>${dateStr}</td>
-        `;
-        table.appendChild(row);
-        csvRows.push([m.type, peluche.taille + "cm", peluche.couleur, m.quantite, m.effectué_par || "?", dateStr]);
-      });
-      document.getElementById("exportCsv").onclick = () => {
-        const csvContent = csvRows.map(e => e.join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "mouvements_stock.csv";
-        a.click();
-      };
-    }
+  const q = query(collection(db, "mouvements_stock"), orderBy("date", "desc"));
+  const snap = await getDocs(q);
+  const peluches = await loadPeluches();
+
+  // 🔁 Charger les utilisateurs avec seulement leur "nom"
+  const utilisateursSnap = await getDocs(collection(db, "utilisateurs"));
+  const utilisateursMap = {};
+  utilisateursSnap.forEach(doc => {
+    const data = doc.data();
+    utilisateursMap[doc.id] = data.nom || "Inconnu";
+  });
+
+  const table = document.getElementById("mouvementsTableBody");
+  table.innerHTML = "";
+  const csvRows = [["Type", "Taille", "Couleur", "Quantité", "Effectué par", "Date"]];
+
+  snap.forEach(doc => {
+    const m = doc.data();
+    const peluche = peluches.find(p => p.id === m.id_peluche);
+    if (!peluche) return;
+    const dateStr = m.date?.toDate ? new Date(m.date.toDate()).toLocaleString() : "";
+    const nomUtilisateur = utilisateursMap[m.effectué_par] || m.effectué_par || "?";
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${m.type}</td>
+      <td>${peluche.taille}cm</td>
+      <td>${peluche.couleur}</td>
+      <td>${m.quantite}</td>
+      <td>${nomUtilisateur}</td>
+      <td>${dateStr}</td>
+    `;
+    table.appendChild(row);
+    csvRows.push([m.type, peluche.taille + "cm", peluche.couleur, m.quantite, nomUtilisateur, dateStr]);
+  });
+
+  document.getElementById("exportCsv").onclick = () => {
+    const csvContent = csvRows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mouvements_stock.csv";
+    a.click();
+  };
+}
+
+
   async function loadDepenses() {
   const snap = await getDocs(query(collection(db, "depenses"), orderBy("date", "desc")));
   const table = document.getElementById("depensesTableBody");
@@ -522,50 +551,59 @@ if(seDeconnecterButton){
       ajoutPelucheConfirmation.style.color = "orange";
     }
   });
-      document.getElementById("stockForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const id_peluche = document.getElementById("peluche").value;
-        const quantite = parseInt(document.getElementById("quantite").value);
-        const type = document.getElementById("type").value;
-        const confirmation = document.getElementById("confirmation");
-        if (!id_peluche || !quantite || !type) return;
-        const mouvement = {
-          id_peluche,
-          quantite,
-          type,
-          effectué_par: "admin",
-          date: serverTimestamp()
-        };
-        try {
-          const stockRef = doc(db, "stock", id_peluche);
-          const stockSnap = await getDoc(stockRef);
-          const current = stockSnap.exists() ? stockSnap.data().quantite : 0;
-          if (type === "sortie") {
-            if (!stockSnap.exists() || current < quantite) {
-              confirmation.textContent = "❌ Stock insuffisant pour la sortie.";
-              confirmation.style.color = "red";
-              return;
-            }
-            await updateDoc(stockRef, { quantite: current - quantite });
-          } else {
-            if (stockSnap.exists()) {
-              await updateDoc(stockRef, { quantite: current + quantite });
-            } else {
-              await setDoc(stockRef, { id_peluche, quantite });
-            }
-          }
-          await addDoc(collection(db, "mouvements_stock"), mouvement);
-          confirmation.textContent = "✔ Mouvement enregistré avec succès";
-          confirmation.style.color = "green";
-          e.target.reset();
-          await loadStockData();
-          await loadMouvements();
-        } catch (err) {
-          console.error(err);
-          confirmation.textContent = "❌ Erreur lors de l'enregistrement";
-          confirmation.style.color = "red";
-        }
-      });
+  document.getElementById("stockForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id_peluche = document.getElementById("peluche").value;
+  const quantite = parseInt(document.getElementById("quantite").value);
+  const type = document.getElementById("type").value;
+  const confirmation = document.getElementById("confirmation");
+
+  if (!id_peluche || !quantite || !type) return;
+
+  const user = auth.currentUser;
+  const uid = user ? user.uid : "admin";  // Par défaut "admin" si non connecté
+
+  const mouvement = {
+    id_peluche,
+    quantite,
+    type,
+    effectué_par: uid,
+    date: serverTimestamp()
+  };
+
+  try {
+    const stockRef = doc(db, "stock", id_peluche);
+    const stockSnap = await getDoc(stockRef);
+    const current = stockSnap.exists() ? stockSnap.data().quantite : 0;
+
+    if (type === "sortie") {
+      if (!stockSnap.exists() || current < quantite) {
+        confirmation.textContent = "❌ Stock insuffisant pour la sortie.";
+        confirmation.style.color = "red";
+        return;
+      }
+      await updateDoc(stockRef, { quantite: current - quantite });
+    } else {
+      if (stockSnap.exists()) {
+        await updateDoc(stockRef, { quantite: current + quantite });
+      } else {
+        await setDoc(stockRef, { id_peluche, quantite });
+      }
+    }
+
+    await addDoc(collection(db, "mouvements_stock"), mouvement);
+    confirmation.textContent = "✔ Mouvement enregistré avec succès";
+    confirmation.style.color = "green";
+    e.target.reset();
+    await loadStockData();
+    await loadMouvements();
+  } catch (err) {
+    console.error(err);
+    confirmation.textContent = "❌ Erreur lors de l'enregistrement";
+    confirmation.style.color = "red";
+  }
+});
+
       document.getElementById("depenseForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const description = document.getElementById("descDepense").value.trim();
