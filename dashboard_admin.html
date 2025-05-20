@@ -28,6 +28,7 @@
     let chartInstance = null;
     let dettes = []; // Pour stocker les dettes
     let capitalEntreprise = 0; // Pour stocker le capital
+    
   async function loadDettes() {
     console.log("loadDettes() called");
     const snap = await getDocs(collection(db, "dettes"));
@@ -138,6 +139,22 @@ window.supprimerDette = supprimerDette;
     detteTotaleElement.textContent = `${detteTotaleCalculee} FCFA`;
     loadRevenusDepensesChart();
     loadDetteEvolutionChart();
+
+    // Calcul du revenu estimé basé sur le stock
+let revenuEstime = 0;
+const stockSnap = await getDocs(collection(db, "stock"));
+stockSnap.forEach(doc => {
+  const data = doc.data();
+  const peluche = peluches.find(p => p.id === data.id_peluche);
+  if (peluche && peluche.prix) {
+    revenuEstime += peluche.prix * data.quantite;
+  }
+});
+
+// Afficher le revenu estimé
+const revenuEstimeElement = document.getElementById("revenuEstime");
+revenuEstimeElement.textContent = `${revenuEstime} FCFA`;
+
   }
 
   async function loadRevenusDepensesChart() {
@@ -633,24 +650,53 @@ async function afficherListePeluches() {
   document.getElementById("depenseTotal").textContent = `Dépense totale : ${depense} FCFA`;
   
 }
-  async function loadStockView() {
+async function loadStockView() {
   const stockSnap = await getDocs(collection(db, "stock"));
   const peluches = await loadPeluches();
   const stockTable = document.getElementById("stockTableBodyView");
   stockTable.innerHTML = "";
+
+  const stockData = [];
+
   stockSnap.forEach(doc => {
     const { id_peluche, quantite } = doc.data();
     const peluche = peluches.find(p => p.id === id_peluche);
     if (!peluche) return;
+
+    stockData.push({
+      taille: peluche.taille,
+      couleur: peluche.couleur,
+      quantite: quantite
+    });
+  });
+
+  // Trier par taille (nombre croissant)
+  stockData.sort((a, b) => a.taille - b.taille);
+
+  let totalQuantite = 0;
+
+  stockData.forEach(item => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${peluche.taille}cm</td>
-      <td>${peluche.couleur}</td>
-      <td>${quantite}</td>
+      <td>${item.taille}cm</td>
+      <td>${item.couleur}</td>
+      <td>${item.quantite}</td>
     `;
     stockTable.appendChild(row);
+    totalQuantite += item.quantite;
   });
+
+  // Ajouter la ligne de total
+  const totalRow = document.createElement("tr");
+  totalRow.style.fontWeight = "bold";
+  totalRow.style.backgroundColor = "#f0f0f0";
+  totalRow.innerHTML = `
+    <td colspan="2">Total</td>
+    <td>${totalQuantite}</td>
+  `;
+  stockTable.appendChild(totalRow);
 }
+
   async function loadDepensesChart() {
   const snap = await getDocs(collection(db, "depenses"));
   const depenses = {};
@@ -915,7 +961,7 @@ async function afficherListePeluches() {
       <section id="section-stock-view" class="section">
         <h2>Stock actuel</h2>
   <input type="text" id="searchStock" placeholder="Rechercher dans le stock...">
-  <table>
+  <table id="stockTable" class="table">
     <thead><tr><th>Taille</th><th>Couleur</th><th>Quantité</th></tr></thead>
     <tbody id="stockTableBodyView"></tbody>
   </table>
@@ -1032,6 +1078,10 @@ async function afficherListePeluches() {
   <h3>Résumé financier</h3>
   <table>
     <tbody>
+      <tr>
+        <th>Revenu Estime (valeur du stock) :</th>
+        <td id="revenuEstime"></td>
+      </tr>
       <tr>
         <th>Revenus Totaux :</th>
         <td id="revenuTotal"></td>
