@@ -34,28 +34,43 @@
     });
 
     async function chargerStock() {
-      const stockSnap = await getDocs(collection(db, "stock"));
-      const peluchesSnap = await getDocs(collection(db, "peluches"));
-      const peluches = {};
-      peluchesSnap.forEach(p => peluches[p.id] = p.data());
+  const stockSnap = await getDocs(collection(db, "stock"));
+  const peluchesSnap = await getDocs(collection(db, "peluches"));
+  const peluches = {};
+  peluchesSnap.forEach(p => peluches[p.id] = p.data());
 
-      const tbody = document.getElementById("stockBody");
-      tbody.innerHTML = "";
-      stockSnap.forEach(doc => {
-        const stock = doc.data();
-        const peluche = peluches[stock.id_peluche];
-        if (peluche) {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${peluche.taille}cm</td>
-            <td>${peluche.couleur}</td>
-            <td>${stock.quantite}</td>
-            <td><button onclick="creerSortie('${doc.id}', '${peluche.taille}', '${peluche.couleur}')">Sortie</button></td>
-          `;
-          tbody.appendChild(row);
-        }
+  const stocks = [];
+  stockSnap.forEach(doc => {
+    const stock = doc.data();
+    const peluche = peluches[stock.id_peluche];
+    if (peluche) {
+      stocks.push({
+        id: doc.id,
+        taille: peluche.taille,
+        couleur: peluche.couleur,
+        quantite: stock.quantite
       });
     }
+  });
+
+  // Trie par taille (croissante)
+  stocks.sort((a, b) => a.taille - b.taille);
+
+  const tbody = document.getElementById("stockBody");
+  tbody.innerHTML = "";
+
+  stocks.forEach(stock => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${stock.taille}cm</td>
+      <td>${stock.couleur}</td>
+      <td>${stock.quantite}</td>
+      <td><button onclick="creerSortie('${stock.id}', '${stock.taille}', '${stock.couleur}')">Sortie</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
 
     window.creerSortie = async (id_peluche, taille, couleur) => {
       await addDoc(collection(db, "sorties_en_attente"), {
@@ -136,7 +151,7 @@
     };
 
     window.seDeconnecter = () => {
-      signOut(auth).then(() => window.location.href = "index.html");
+      signOut(auth).then(() => window.location.href = "login.html");
     };
   </script>
 
