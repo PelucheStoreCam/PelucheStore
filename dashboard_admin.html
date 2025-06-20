@@ -690,7 +690,7 @@ async function afficherListePeluches() {
 }
 async function loadStockView() {
   const stockSnap = await getDocs(collection(db, "stock"));
-  const peluches = await loadPeluches();
+  const peluches = await loadPeluches(); // Assurez-vous que loadPeluches() est définie et fonctionne correctement
   const stockTable = document.getElementById("stockTableBodyView");
   stockTable.innerHTML = "";
 
@@ -702,6 +702,7 @@ async function loadStockView() {
     if (!peluche) return;
 
     stockData.push({
+      docId: doc.id, // ID du document dans la collection 'stock' - AJOUTÉ
       taille: peluche.taille,
       couleur: peluche.couleur,
       quantite: quantite
@@ -718,8 +719,7 @@ async function loadStockView() {
     row.innerHTML = `
       <td>${item.taille}cm</td>
       <td>${item.couleur}</td>
-      <td>${item.quantite}</td>
-    `;
+      <td class="editable-quantity" data-stock-doc-id="${item.docId}" contenteditable="true">${item.quantite}</td> `;
     stockTable.appendChild(row);
     totalQuantite += item.quantite;
   });
@@ -733,6 +733,53 @@ async function loadStockView() {
     <td>${totalQuantite}</td>
   `;
   stockTable.appendChild(totalRow);
+
+  // AJOUTÉ : Écouteurs d'événements pour l'édition en ligne et la sauvegarde
+  document.querySelectorAll('#stockTableBodyView .editable-quantity').forEach(cell => {
+    cell.addEventListener('blur', async function() {
+      const newQuantity = parseInt(this.textContent);
+      const stockDocId = this.dataset.stockDocId;
+
+      if (isNaN(newQuantity) || newQuantity < 0) {
+        alert("Veuillez entrer une quantité valide (nombre positif).");
+        // Revenir à l'ancienne valeur si invalide
+        const oldQuantity = parseInt(this.dataset.oldValue || 0); // Utiliser 0 si oldValue n'est pas défini
+        this.textContent = oldQuantity;
+        return;
+      }
+
+      if (stockDocId) {
+        try {
+          const stockRef = doc(db, "stock", stockDocId);
+          await updateDoc(stockRef, { quantite: newQuantity });
+          alert("Quantité mise à jour avec succès.");
+          // Mettre à jour les autres sections du tableau de bord si nécessaire
+          // Assurez-vous que ces fonctions sont définies ailleurs dans votre script
+          await updateFinanceSummary(); // Met à jour le résumé financier (si stock impacte revenu estimé)
+          await loadStockData(); // Rafraîchit le graphique circulaire des peluches (si vous en avez un)
+          await loadMouvements(); // Rafraîchit les mouvements de stock
+          await loadStockView(); // Recharger la vue du stock pour s'assurer que les totaux sont à jour
+
+        } catch (error) {
+          console.error("Erreur lors de la mise à jour de la quantité : ", error);
+          alert("Erreur lors de la mise à jour de la quantité.");
+        }
+      }
+    });
+
+    // Stocker l'ancienne valeur lors de la mise au point pour une éventuelle réinitialisation
+    cell.addEventListener('focus', function() {
+      this.dataset.oldValue = this.textContent;
+    });
+
+    // Permettre l'enregistrement sur la touche 'Entrée'
+    cell.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault(); // Empêcher la nouvelle ligne
+        this.blur(); // Déclencher l'événement blur pour enregistrer
+      }
+    });
+  });
 }
 
   async function loadDepensesChart() {
@@ -1000,7 +1047,13 @@ async function loadStockView() {
         <h2>Stock actuel</h2>
   <input type="text" id="searchStock" placeholder="Rechercher dans le stock...">
   <table id="stockTable" class="table">
-    <thead><tr><th>Taille</th><th>Couleur</th><th>Quantité</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Taille</th>
+        <th>Couleur</th>
+        <th>Quantité</th>
+      </tr>
+    </thead>
     <tbody id="stockTableBodyView"></tbody>
   </table>
 </section>
