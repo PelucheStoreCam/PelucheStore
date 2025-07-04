@@ -364,7 +364,6 @@ revenuEstimeElement.textContent = `${revenuEstime} FCFA`;
   const snap = await getDocs(q);
   const peluches = await loadPeluches();
 
-  // 🔁 Charger les utilisateurs avec seulement leur "nom"
   const utilisateursSnap = await getDocs(collection(db, "utilisateurs"));
   const utilisateursMap = {};
   utilisateursSnap.forEach(doc => {
@@ -391,7 +390,7 @@ revenuEstimeElement.textContent = `${revenuEstime} FCFA`;
       <td>${m.quantite}</td>
       <td>${nomUtilisateur}</td>
       <td>${dateStr}</td>
-    `;
+      <td><button onclick="supprimerMouvement('${doc.id}', '${m.id_peluche}', ${m.quantite}, '${m.type}')">Supprimer</button></td> `;
     table.appendChild(row);
     csvRows.push([m.type, peluche.taille + "cm", peluche.couleur, m.quantite, nomUtilisateur, dateStr]);
   });
@@ -406,6 +405,52 @@ revenuEstimeElement.textContent = `${revenuEstime} FCFA`;
     a.click();
   };
 }
+
+async function supprimerMouvement(mouvementId, pelucheId, quantite, typeMouvement) {
+  if (confirm("Êtes-vous sûr de vouloir supprimer ce mouvement ?")) {
+    try {
+      // 1. Supprimer le mouvement de la collection "mouvements_stock"
+      await deleteDoc(doc(db, "mouvements_stock", mouvementId));
+
+      // 2. Mettre à jour le stock en fonction du type de mouvement
+      const stockRef = doc(db, "stock", pelucheId);
+      const stockSnap = await getDoc(stockRef);
+
+      if (stockSnap.exists()) {
+        const currentStock = stockSnap.data().quantite;
+        let newStock = currentStock;
+
+        if (typeMouvement === "entree") {
+          // Si c'était une entrée, on retire la quantité du stock
+          newStock -= quantite;
+        } else if (typeMouvement === "sortie") {
+          // Si c'était une sortie, on ajoute la quantité au stock
+          newStock += quantite;
+        }
+
+        if (newStock < 0) {
+            console.warn("Le stock résultant de la suppression est négatif. Cela peut indiquer une incohérence.");
+            // Vous pourriez vouloir gérer cela plus rigoureusement, par exemple en ne permettant pas la suppression si le stock devient négatif
+        }
+        await updateDoc(stockRef, { quantite: newStock });
+      } else {
+          console.warn("Peluche non trouvée dans le stock lors de la suppression du mouvement. Le stock n'a pas été mis à jour.");
+      }
+
+      alert("Mouvement supprimé avec succès et stock mis à jour.");
+      await loadMouvements(); // Recharger la liste des mouvements
+      await loadStockData(); // Recharger les données du stock pour mettre à jour le graphique
+      await loadStockView(); // Recharger la vue détaillée du stock
+      await updateFinanceSummary(); // Mettre à jour le résumé financier si les mouvements affectent les revenus/dépenses
+    } catch (error) {
+      console.error("Erreur lors de la suppression du mouvement : ", error);
+      alert("Erreur lors de la suppression du mouvement.");
+    }
+  }
+}
+
+// Rendre la fonction accessible globalement
+window.supprimerMouvement = supprimerMouvement;
 
 
   async function loadDepenses() {
@@ -1083,6 +1128,7 @@ async function loadStockView() {
             <th>Quantité</th>
             <th>Effectué par</th>
             <th>Date</th>
+            <th>Actions</th>
           </tr></thead>
           <tbody id="mouvementsTableBody"></tbody>
         </table>
